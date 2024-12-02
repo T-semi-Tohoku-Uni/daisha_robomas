@@ -29,9 +29,15 @@
 typedef struct{
 	uint16_t CANID;
 	uint8_t motorID;
-	int16_t actVel;
-	double angle;
+	int16_t trgVel;
+	volatile int16_t actVel;
+	volatile int16_t p_actVel;
+	volatile int16_t cu;
+	double actangle;
 	int16_t actCurrent;
+	float hensa;
+	float ind;
+	float w;
 }motor;
 /* USER CODE END PTD */
 
@@ -49,6 +55,8 @@ typedef struct{
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan3;
 
+TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -64,15 +72,17 @@ uint8_t TxData_motor[8] = {};
 uint8_t RxData_motor[8] = {};
 
 motor robomas[8] = {
-		{0x201, 1, 0, 0, 0},
-		{0x202, 2, 0, 0, 0},
-		{0x203, 3, 0, 0, 0},
-		{0x204, 4, 0, 0, 0},
-		{0x205, 5, 0, 0, 0},
-		{0x206, 6, 0, 0, 0},
-		{0x207, 7, 0, 0, 0},
-		{0x208, 8, 0, 0, 0},
+		{0x201, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x202, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x203, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x204, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x205, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x206, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x207, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x208, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
+
+volatile float k_p = 7, k_i = 0.5, k_d = 0.0001;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,6 +91,7 @@ static void MX_GPIO_Init(void);
 static void MX_FDCAN1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_FDCAN3_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -203,6 +214,35 @@ void FDCAN_motor_RxTxSettings(void) {
 	}
 }
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if(htim == &htim6){
+		for (int i=0; i<=3; i++){
+			robomas[i].hensa = robomas[i].trgVel - robomas[i].actVel;
+			if (robomas[i].hensa >= 1000) robomas[i].hensa = 1000;
+			else if (robomas[i].hensa <= -1000) robomas[i].hensa = -1000;
+			float d = (robomas[i].actVel - robomas[i].p_actVel) / 0.001;
+			robomas[i].ind += robomas[i].hensa*0.1;
+			if (d >= 30000) d = 30000;
+			else if (d <= -30000) d = -30000;
+			if (robomas[i].ind >= 10000) robomas[i].ind = 10000;
+			else if (robomas[i].ind <= -10000) robomas[i].ind = -10000;
+
+
+			float t = k_p*robomas[i].hensa;
+			if (t>=10000) t = 10000;
+			else if (t<=-10000) t = -10000;
+			robomas[i].cu = (int16_t)(t+k_i*robomas[i].ind+k_d*d);
+			if (robomas[i].cu <= -10000) robomas[i].cu = -10000;
+			else if (robomas[i].cu >= 10000) robomas[i].cu = 10000;
+
+
+			TxData_motor[i*2] = (robomas[i].cu) >> 8;
+			TxData_motor[i*2+1] = (uint8_t)((robomas[i].cu) & 0xff);
+			robomas[i].p_actVel = robomas[i].actVel;
+		}
+	}
+}
+
 int _write(int file, char *ptr, int len)
 {
     HAL_UART_Transmit(&huart2,(uint8_t *)ptr,len,10);
@@ -242,18 +282,25 @@ int main(void)
   MX_FDCAN1_Init();
   MX_USART2_UART_Init();
   MX_FDCAN3_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   printf("start\r\n");
   FDCAN_motor_RxTxSettings();
   printf("can_motor_start\r\n");
   FDCAN_RxTxSettings();
   printf("can start\r\n");
+  HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan3, &TxHeader_motor, TxData_motor) != HAL_OK){
+		  printf("addmassage is error\r\n");
+		  Error_Handler();
+	  }
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -390,6 +437,44 @@ static void MX_FDCAN3_Init(void)
   /* USER CODE BEGIN FDCAN3_Init 2 */
 
   /* USER CODE END FDCAN3_Init 2 */
+
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 9;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 7999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
 
 }
 
