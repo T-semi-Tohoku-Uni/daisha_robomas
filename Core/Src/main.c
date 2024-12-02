@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -29,15 +30,30 @@
 typedef struct{
 	uint16_t CANID;
 	uint8_t motorID;
-	int16_t actVel;
-	double angle;
-	int16_t actCurrent;
+	volatile int16_t actVel;
+	volatile double angle;
+	volatile int16_t actCurrent;
+	//PID
+	int16_t trgVel;
+	volatile float hensa;
+	volatile float ind;
+	float w;
+	int16_t p_actVel;
+	volatile int16_t cu;
 }motor;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define R_F 4
+#define L_F 3
+#define R_B 1
+#define L_B 2
 
+#define PI 3.1415
+
+#define true 1
+#define false 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -49,9 +65,18 @@ typedef struct{
 FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan3;
 
+TIM_HandleTypeDef htim6;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+const float a0 = PI/180*45;
+const float a1 = PI/180*135;
+const float a2 = PI/180*225;
+const float a3 = PI/180*315;
+const float r = 0.03;//m
+const float R = 0.15;//m
+
 FDCAN_TxHeaderTypeDef TxHeader;
 FDCAN_RxHeaderTypeDef RxHeader;
 FDCAN_TxHeaderTypeDef TxHeader_motor;
@@ -64,15 +89,26 @@ uint8_t TxData_motor[8] = {};
 uint8_t RxData_motor[8] = {};
 
 motor robomas[8] = {
-		{0x201, 1, 0, 0, 0},
-		{0x202, 2, 0, 0, 0},
-		{0x203, 3, 0, 0, 0},
-		{0x204, 4, 0, 0, 0},
-		{0x205, 5, 0, 0, 0},
-		{0x206, 6, 0, 0, 0},
-		{0x207, 7, 0, 0, 0},
-		{0x208, 8, 0, 0, 0},
+		{0x201, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x202, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x203, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x204, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x205, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x206, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x207, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		{0x208, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 };
+
+volatile float k_p = 7, k_i = 0.5, k_d = 0.0001;
+
+float x = 0, y = 0, theta = 0;
+volatile int16_t vel_x = 0, vel_y = 0, omega_c = 0;
+volatile float vx = 0, vy = 0, omega = 0;
+
+volatile uint8_t is_Right = 0, is_Left = 0, is_Up = 0, is_Down = 0, is_Circle = 0, is_Square = 0, is_Triangle = 0;
+volatile uint8_t is_Cross = 0, is_UpRight = 0, is_DownRight = 0, is_UpLeft = 0, is_DownLeft = 0, is_R1 = 0, is_L1 = 0;
+volatile uint8_t is_Share = 0, is_Options = 0, is_R3 = 0, is_L3 = 0, is_PsButton = 0, is_Touchpad = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,12 +117,31 @@ static void MX_GPIO_Init(void);
 static void MX_FDCAN1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_FDCAN3_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void omni_calc(float theta,float vx,float vy,float omega,float *w0,float *w1,float *w2,float *w3){
+
+	float v[3] = {vx, vy, omega};
+	float sint = sin(theta);
+	float cost = cos(theta);
+
+	float arr[4][3] =
+	{{-cos(a0)*sint-sin(a0)*cost, cos(a0)*cost-sin(a0)*sint, R},
+	{-cos(a1)*sint-sin(a1)*cost, cos(a1)*cost-sin(a1)*sint, R},
+	{-cos(a2)*sint-sin(a2)*cost, cos(a2)*cost-sin(a2)*sint, R},
+	{-cos(a3)*sint-sin(a3)*cost, cos(a3)*cost-sin(a3)*sint, R}};
+
+	*w0 = (arr[0][0] * v[0] + arr[0][1] * v[1] + arr[0][2] * v[2]) / r;
+	*w1 = (arr[1][0] * v[0] + arr[1][1] * v[1] + arr[1][2] * v[2]) / r;
+	*w2 = (arr[2][0] * v[0] + arr[2][1] * v[1] + arr[2][2] * v[2]) / r;
+	*w3 = (arr[3][0] * v[0] + arr[3][1] * v[1] + arr[3][2] * v[2]) / r;
+}
+
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs){
 	if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET) {
 
@@ -106,7 +161,6 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs){
-	int16_t CANID = 0;
 	if (RESET != (RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE)) {
 
 	        /* Retrieve Rx messages from RX FIFO0 */
@@ -116,9 +170,46 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 			Error_Handler();
 		}
 
-		if (CANID == RxHeader.Identifier) {
-
+		if (RxHeader.Identifier == 0x300) {
+			vel_x = (int8_t)RxData[0];
+			vel_y = (int8_t)RxData[1];
+			omega_c = (uint8_t)RxData[5] - (uint8_t)RxData[4];
+			if ((RxData[6] & 0x40) == 0x40){
+				is_Right = true;
+			}
+			else {
+				is_Right = false;
+			}
+			if ((RxData[6] & 0x20) == 0x20){
+				is_Left = true;
+			}
+			else {
+				is_Left = false;
+			}
+			if ((RxData[6] & 0x10) == 0x10){
+				is_Up = true;
+			}
+			else {
+				is_Up = false;
+			}
+			if ((RxData[6] & 0x8) == 0x8){
+				is_Down = true;
+			}
+			else {
+				is_Down = false;
+			}
 		}
+		if (RxHeader.Identifier == 0x301) {
+			if ((int8_t)RxData[1] == 1) {
+				vel_x = 0;
+				vel_y = 0;
+				is_Right = false;
+				is_Left = false;
+				is_Up = false;
+				is_Down = false;
+			}
+		}
+
 	}
 }
 
@@ -203,6 +294,41 @@ void FDCAN_motor_RxTxSettings(void) {
 	}
 }
 
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if (&htim6 == htim) {
+		for (int i = 0; i<=3; i++) {
+			//set vel
+
+			robomas[i].hensa = robomas[i].trgVel - robomas[i].actVel;
+			if (robomas[i].hensa >= 1000) robomas[i].hensa = 1000;
+			else if (robomas[i].hensa <= -1000) robomas[i].hensa = -1000;
+			float d = (robomas[i].actVel - robomas[i].p_actVel) / 0.001;
+			robomas[i].ind += robomas[i].hensa*0.1;
+			if (d >= 30000) d = 30000;
+			else if (d <= -30000) d = -30000;
+			if (robomas[i].ind >= 10000) robomas[i].ind = 10000;
+			else if (robomas[i].ind <= -10000) robomas[i].ind = -10000;
+
+
+			float t = k_p*robomas[i].hensa;
+			if (t>=10000) t = 10000;
+			else if (t<=-10000) t = -10000;
+			robomas[i].cu = (int16_t)(t+k_i*robomas[i].ind+k_d*d);
+			if (robomas[i].cu <= -10000) robomas[i].cu = -10000;
+			else if (robomas[i].cu >= 10000) robomas[i].cu = 10000;
+
+
+			TxData_motor[i*2] = (robomas[i].cu) >> 8;
+			TxData_motor[i*2+1] = (uint8_t)((robomas[i].cu) & 0xff);
+			robomas[i].p_actVel = robomas[i].actVel;
+		}
+		if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan3, &TxHeader_motor, TxData_motor) != HAL_OK){
+			printf("addmassage is error\r\n");
+			Error_Handler();
+		}
+	}
+}
+
 int _write(int file, char *ptr, int len)
 {
     HAL_UART_Transmit(&huart2,(uint8_t *)ptr,len,10);
@@ -242,18 +368,52 @@ int main(void)
   MX_FDCAN1_Init();
   MX_USART2_UART_Init();
   MX_FDCAN3_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   printf("start\r\n");
   FDCAN_motor_RxTxSettings();
   printf("can_motor_start\r\n");
   FDCAN_RxTxSettings();
   printf("can start\r\n");
+  vx = 0;
+  vy = 0;
+  omega = 0;
+  HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (vel_x < 10 && vel_x > -10){
+		  vel_x = 0;
+	  }
+	  if (vel_y < 10 && vel_y > -10){
+		  vel_y = 0;
+	  }
+	  vx = vel_x*0.01;
+	  vy = vel_y*0.01;
+	  omega = omega_c/100;
+
+	  if (is_Right){
+		  vx += 0.1;
+	  }
+	  if (is_Left){
+		  vx -= 0.1;
+	  }
+	  if (is_Up){
+		  vy += 0.1;
+	  }
+	  if (is_Down){
+		  vy -= 0.1;
+	  }
+	  omni_calc(theta ,vx, vy, omega, &robomas[R_F-1].w, &robomas[L_F-1].w, &robomas[L_B-1].w, &robomas[R_B-1].w);
+	  robomas[R_F-1].trgVel = (int)(-1*robomas[R_F-1].w*36*60/(2*PI));
+	  robomas[R_B-1].trgVel = (int)(-1*robomas[R_B-1].w*36*60/(2*PI));
+	  robomas[L_F-1].trgVel =  (int)(-1*robomas[L_F-1].w*36*60/(2*PI));
+	  robomas[L_B-1].trgVel = (int)(-1*robomas[L_B-1].w*36*60/(2*PI));
+
+	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -390,6 +550,44 @@ static void MX_FDCAN3_Init(void)
   /* USER CODE BEGIN FDCAN3_Init 2 */
 
   /* USER CODE END FDCAN3_Init 2 */
+
+}
+
+/**
+  * @brief TIM6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM6_Init(void)
+{
+
+  /* USER CODE BEGIN TIM6_Init 0 */
+
+  /* USER CODE END TIM6_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM6_Init 1 */
+
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 9;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 7999;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM6_Init 2 */
+
+  /* USER CODE END TIM6_Init 2 */
 
 }
 
