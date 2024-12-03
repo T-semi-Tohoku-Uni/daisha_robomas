@@ -83,6 +83,9 @@ motor robomas[8] = {
 };
 
 volatile float k_p = 7, k_i = 0.5, k_d = 0.0001;
+
+float x = 0, y = 0, theta = 0;
+float vx = 0, vy = 0, omega = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -117,7 +120,6 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 }
 
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs){
-	int16_t CANID = 0;
 	if (RESET != (RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE)) {
 
 	        /* Retrieve Rx messages from RX FIFO0 */
@@ -127,8 +129,11 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 			Error_Handler();
 		}
 
-		if (CANID == RxHeader.Identifier) {
-
+		if (0x400 == RxHeader.Identifier) {
+			x = (int16_t)((RxData[0] << 8) | RxData[1]);
+			y = (int16_t)((RxData[2] << 8) | RxData[3]);
+			theta = (int16_t)((RxData[4] << 8) | RxData[5]);
+			theta /= 400;
 		}
 	}
 }
@@ -300,6 +305,7 @@ int main(void)
 		  printf("addmassage is error\r\n");
 		  Error_Handler();
 	  }
+	  printf("%f, %f, %f\r\n", x, y, theta);
 	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
