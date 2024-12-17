@@ -33,7 +33,7 @@ typedef struct{
 	volatile int16_t actVel;
 	volatile int16_t p_actVel;
 	volatile int16_t cu;
-	double actangle;
+	double angle;
 	int16_t actCurrent;
 	float hensa;
 	float ind;
