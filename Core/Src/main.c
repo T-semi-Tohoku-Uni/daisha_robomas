@@ -39,11 +39,20 @@ typedef struct{
 	float ind;
 	float w;
 }motor;
+
+typedef struct{
+	volatile int16_t x;
+	volatile int16_t y;
+	volatile float theta;
+}purpose;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define PI 3.1415
 
+#define r 60//mm
+#define R 160//mm
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -56,6 +65,7 @@ FDCAN_HandleTypeDef hfdcan1;
 FDCAN_HandleTypeDef hfdcan3;
 
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
 
 UART_HandleTypeDef huart2;
 
@@ -86,6 +96,10 @@ volatile float k_p = 7, k_i = 0.5, k_d = 0.0001;
 
 float x = 0, y = 0, theta = 0;
 float vx = 0, vy = 0, omega = 0;
+
+purpose mokuhyo[1] = {
+		{0, 100, 0}
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -95,6 +109,7 @@ static void MX_FDCAN1_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_FDCAN3_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -239,7 +254,7 @@ void omni_calc(float theta,float vx,float vy,float omega,float *w0,float *w1,flo
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim == &htim6){
+	if(&htim6 == htim){
 		for (int i=0; i<=3; i++){
 			robomas[i].hensa = robomas[i].trgVel - robomas[i].actVel;
 			if (robomas[i].hensa >= 1000) robomas[i].hensa = 1000;
@@ -264,6 +279,35 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 			TxData_motor[i*2+1] = (uint8_t)((robomas[i].cu) & 0xff);
 			robomas[i].p_actVel = robomas[i].actVel;
 		}
+	}
+	if(&htim7 == htim){
+		int16_t m_state = 0;
+		float k_p = 0.001, k_i = 0, k_d = 0;
+		float k_p_t = 1, k_i_t = 0, k_d_t = 0;
+		float hensax = mokuhyo[m_state].x - x;
+		float dx = (float)x - p_x;
+		/*
+		mokuhyo[m_state].indx += hensax;*/
+		vx = (k_p*hensax/* + k_i*mokuhyo[m_state].indx + k_d*dx*/);
+
+		p_x = x;
+
+		float hensay = mokuhyo[m_state].y -y;
+		float dy = (float)y - p_y;/*
+		mokuhyo[m_state].indy += hensay;*/
+		vy = (k_p*hensay/* + k_i*mokuhyo[m_state].indy + k_d*dy*/);
+
+		p_y = y;
+
+		float hensat = mokuhyo[m_state].theta - theta;
+		float dt = theta - p_t;/*
+		mokuhyo[m_state].indt += hensat;*/
+		omega =(k_p_t*hensat/* + k_i_t*mokuhyo[m_state].indt + k_d_t*dt*/);
+
+		p_t = theta;
+		vx_tusin = (int16_t)(vx * 1000);
+		vy_tusin = (int16_t)(vy * 1000);
+		omega_tusin = (int16_t)(omega * 400);
 	}
 }
 
@@ -307,6 +351,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_FDCAN3_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
   printf("start\r\n");
   FDCAN_motor_RxTxSettings();
@@ -314,13 +359,14 @@ int main(void)
   FDCAN_RxTxSettings();
   printf("can start\r\n");
   HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start_IT(&htim7);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  omni_calc(0 ,vx, vy, omega, &robomas[R_F-1].w, &robomas[L_F-1].w, &robomas[L_B-1].w, &robomas[R_B-1].w);
+	  omni_calc(theta ,vx, vy, omega, &robomas[R_F-1].w, &robomas[L_F-1].w, &robomas[L_B-1].w, &robomas[R_B-1].w);
 	  robomas[R_F-1].trgVel = (int)(-1*robomas[R_F-1].w*36*60/(2*PI));
 	  robomas[R_B-1].trgVel = (int)(-1*robomas[R_B-1].w*36*60/(2*PI));
 	  robomas[L_F-1].trgVel =  (int)(-1*robomas[L_F-1].w*36*60/(2*PI));
@@ -330,7 +376,7 @@ int main(void)
 		  printf("addmassage is error\r\n");
 		  Error_Handler();
 	  }
-	  printf("%f, %f, %f\r\n", x, y, theta);
+	  printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
 	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
@@ -506,6 +552,44 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 99;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 7999;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
 
 }
 
