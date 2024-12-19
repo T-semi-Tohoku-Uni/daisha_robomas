@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,10 +50,17 @@ typedef struct{
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define R_F 4
+#define L_F 3
+#define R_B 1
+#define L_B 2
+
 #define PI 3.1415
 
-#define r 60//mm
-#define R 160//mm
+#define true 1
+#define false 0
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -70,6 +78,13 @@ TIM_HandleTypeDef htim7;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+const float a0 = PI/180*45;
+const float a1 = PI/180*135;
+const float a2 = PI/180*225;
+const float a3 = PI/180*315;
+const float r = 0.03;//m
+const float R = 0.15;//m
+
 FDCAN_TxHeaderTypeDef TxHeader;
 FDCAN_RxHeaderTypeDef RxHeader;
 FDCAN_TxHeaderTypeDef TxHeader_motor;
@@ -98,7 +113,9 @@ float x = 0, y = 0, theta = 0;
 float vx = 0, vy = 0, omega = 0;
 
 purpose mokuhyo[1] = {
-		{0, 100, 0}
+		{0, 100, PI/2},
+		{0, 1000, 0},
+		{800, 1000,PI},
 };
 /* USER CODE END PV */
 
@@ -285,29 +302,29 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		float k_p = 0.001, k_i = 0, k_d = 0;
 		float k_p_t = 1, k_i_t = 0, k_d_t = 0;
 		float hensax = mokuhyo[m_state].x - x;
-		float dx = (float)x - p_x;
+		//float dx = (float)x - p_x;
 		/*
 		mokuhyo[m_state].indx += hensax;*/
 		vx = (k_p*hensax/* + k_i*mokuhyo[m_state].indx + k_d*dx*/);
 
-		p_x = x;
+		//p_x = x;
 
 		float hensay = mokuhyo[m_state].y -y;
-		float dy = (float)y - p_y;/*
-		mokuhyo[m_state].indy += hensay;*/
+		//float dy = (float)y - p_y;/*
+		//mokuhyo[m_state].indy += hensay;*/
 		vy = (k_p*hensay/* + k_i*mokuhyo[m_state].indy + k_d*dy*/);
 
-		p_y = y;
+		//p_y = y;
 
 		float hensat = mokuhyo[m_state].theta - theta;
-		float dt = theta - p_t;/*
-		mokuhyo[m_state].indt += hensat;*/
+		//float dt = theta - p_t;/*
+		//mokuhyo[m_state].indt += hensat;*/
 		omega =(k_p_t*hensat/* + k_i_t*mokuhyo[m_state].indt + k_d_t*dt*/);
-
+/*
 		p_t = theta;
 		vx_tusin = (int16_t)(vx * 1000);
 		vy_tusin = (int16_t)(vy * 1000);
-		omega_tusin = (int16_t)(omega * 400);
+		omega_tusin = (int16_t)(omega * 400);*/
 	}
 }
 
@@ -366,6 +383,24 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (vx > 1) {
+		  vx = 1;
+	  }
+	  if (vx < -1) {
+		  vx = -1;
+	  }
+	  if (vy > 1) {
+		  vy = 1;
+	  }
+	  if (vy < -1) {
+		  vy = -1;
+	  }
+	  if (omega > 1) {
+		  omega = 1;
+	  }
+	  if (omega < -1) {
+		  omega = -1;
+	  }
 	  omni_calc(theta ,vx, vy, omega, &robomas[R_F-1].w, &robomas[L_F-1].w, &robomas[L_B-1].w, &robomas[R_B-1].w);
 	  robomas[R_F-1].trgVel = (int)(-1*robomas[R_F-1].w*36*60/(2*PI));
 	  robomas[R_B-1].trgVel = (int)(-1*robomas[R_B-1].w*36*60/(2*PI));
