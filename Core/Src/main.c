@@ -143,6 +143,11 @@ int16_t m_state = 0;
 int16_t flag_loc = 0;
 int16_t initial;
 int16_t flag_servo = 0;
+
+int16_t t_1 = 0, t_3 = 0, t_5 = 0, t_7 = 0;
+int16_t state_6_7 = nobori;
+
+int16_t iro_t = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -354,17 +359,82 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	}
 	if(&htim7 == htim){
 		if (fabsf(x - mokuhyo[m_state].x) < 10 && fabsf(y - mokuhyo[m_state].y) < 10 && (fabsf(theta) - mokuhyo[m_state].theta) < 0.01) {
-			if (6 == m_state) {
-				//m_state = 0;
+			if (red_t == m_state) {
+				m_state = red_o;
 				flag_loc = 1;
-				mokuhyo[6].x = x;
-				mokuhyo[6].y = y;
-				mokuhyo[6].theta = theta;
 			}
-			else {
-				m_state++;
-				flag_loc = 0;
+			else if (red_o == m_state) {
+				if (t_1 >= 100) {
+					m_state = blue_t;
+					t_1 = 0;
+				}
+				else {
+					t_1++;
+					flag_loc = 1;
+				}
 			}
+			else if (yellow_t == m_state) {
+				m_state = yellow_o;
+				flag_loc = 1;
+			}
+			else if (yellow_o == m_state) {
+				if (t_3 >= 100) {
+					m_state = blue_t;
+					t_3 = 0;
+				}
+				else {
+					t_3++;
+					flag_loc = 1;
+				}
+			}
+			else if (blue_t == m_state) {
+				if (ireru == state_6_7){
+					m_state = blue_o;
+					flag_loc = 1;
+				}
+				else if (kudari == state_6_7) {
+					m_state = iro_t;
+					flag_loc = 1;
+					state_6_7 = ireru;
+				}
+				else if (nobori == state_6_7) {
+					m_state = 6;
+					flag_loc = 1;
+				}
+			}
+			else if (blue_o == m_state) {
+				if (t_5 >= 100) {
+					m_state = blue_t;
+					t_5 = 0;
+					flag_loc = 1;
+					state_6_7 = nobori;
+				}
+				else {
+					t_5++;
+					flag_loc = 1;
+				}
+			}
+			else if (6 == m_state) {
+				if (nobori == state_6_7) {
+					m_state = 7;
+					flag_loc = 1;
+				}
+				if (kudari == state_6_7)
+				m_state = blue_t;
+				flag_loc = 1;
+			}
+			else if (7 == m_state) {
+				if (t_7 >= 100) {
+					m_state = 6;
+					t_7 = 0;
+					state_6_7 = kudari;
+				}
+				else {
+					t_7++;
+					flag_loc = 1;
+				}
+			}
+
 		}
 		else {
 			flag_loc = 0;
@@ -454,6 +524,12 @@ int main(void)
 	  robomas[L_B-1].trgVel = (int)(-1*robomas[L_B-1].w*36*60/(2*PI));
 
 	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan3, &TxHeader_motor, TxData_motor) != HAL_OK){
+		  printf("addmassage is error\r\n");
+		  Error_Handler();
+	  }
+	  TxHeader.Identifier = 0x210;
+	  TxData[0] = flag_loc;
+	  if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData)) {
 		  printf("addmassage is error\r\n");
 		  Error_Handler();
 	  }
