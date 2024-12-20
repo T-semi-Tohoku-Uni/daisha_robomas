@@ -74,6 +74,8 @@ typedef struct{
 #define blue_t 4
 #define blue_o 5
 
+
+#define a 288
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -97,7 +99,7 @@ const float a1 = PI/180*135;
 const float a2 = PI/180*225;
 const float a3 = PI/180*315;
 const float r = 0.03;//m
-const float R = 0.15;//m
+const float R = 0.144;//m
 
 FDCAN_TxHeaderTypeDef TxHeader;
 FDCAN_RxHeaderTypeDef RxHeader;
@@ -127,9 +129,14 @@ float x = 0, y = 0, theta = 0;
 float vx = 0, vy = 0, omega = 0;
 
 purpose mokuhyo[] = {
-		{0, 100, PI/2},
-		{0, 1000, 0},
-		{800, 1000,PI},
+		{-50, 250+a/2, PI/2},
+		{-100, 250+a/2, PI/2},//red
+		{-50, 900+a/2,PI/2},
+		{-100, 900+a/2,PI/2},//yellow
+		{-50, 1550+a/2,PI/2},
+		{-100, 1550+a/2,PI/2},//blue
+		{990, 1550+a/2, PI},
+		{}
 };
 int16_t m_state = 0;
 
@@ -346,7 +353,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		omega_tusin = (int16_t)(omega * 400);*/
 	}
 	if(&htim7 == htim){
-		if (fabsf(x - mokuhyo[m_state].x) < 10 && fabsf(y - mokuhyo[m_state].y) < 10 && fabsf(theta) - mokuhyo[m_state].theta) {
+		if (fabsf(x - mokuhyo[m_state].x) < 10 && fabsf(y - mokuhyo[m_state].y) < 10 && (fabsf(theta) - mokuhyo[m_state].theta) < 0.01) {
 			if (6 == m_state) {
 				//m_state = 0;
 				flag_loc = 1;
@@ -450,8 +457,8 @@ int main(void)
 		  printf("addmassage is error\r\n");
 		  Error_Handler();
 	  }
-	  //printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
-	  printf("%d, %d, %f, %f, %f, %f\r\n", mokuhyo[m_state].x, mokuhyo[m_state].y, mokuhyo[m_state].theta, vx, vy, omega);
+	  printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
+	  //printf("%d, %d, %f, %f, %f, %f\r\n", mokuhyo[m_state].x, mokuhyo[m_state].y, mokuhyo[m_state].theta, vx, vy, omega);
 	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
