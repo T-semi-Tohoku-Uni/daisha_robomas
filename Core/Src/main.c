@@ -61,6 +61,19 @@ typedef struct{
 #define true 1
 #define false 0
 
+#define nobori 0
+#define kudari 1
+#define ireru 2
+
+#define red_t 0
+#define red_o 1
+
+#define yellow_t 2
+#define yellow_o 3
+
+#define blue_t 4
+#define blue_o 5
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -121,6 +134,8 @@ purpose mokuhyo[] = {
 int16_t m_state = 0;
 
 int16_t flag_loc = 0;
+int16_t initial;
+int16_t flag_servo = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -332,12 +347,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	}
 	if(&htim7 == htim){
 		if (fabsf(x - mokuhyo[m_state].x) < 10 && fabsf(y - mokuhyo[m_state].y) < 10 && fabsf(theta) - mokuhyo[m_state].theta) {
-			if (4 == m_state) {
-				m_state = 1;
+			if (6 == m_state) {
+				//m_state = 0;
+				flag_loc = 1;
+				mokuhyo[6].x = x;
+				mokuhyo[6].y = y;
+				mokuhyo[6].theta = theta;
 			}
 			else {
 				m_state++;
+				flag_loc = 0;
 			}
+		}
+		else {
+			flag_loc = 0;
 		}
 	}
 }
@@ -428,7 +451,7 @@ int main(void)
 		  Error_Handler();
 	  }
 	  //printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
-	  printf("%f, %f, %f, %f, %f, %f\r\n", mokuhyo[m_state].x, mokuhyo[m_state].y, mokuhyo[m_state].theta, vx, vy, omega);
+	  printf("%d, %d, %f, %f, %f, %f\r\n", mokuhyo[m_state].x, mokuhyo[m_state].y, mokuhyo[m_state].theta, vx, vy, omega);
 	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
