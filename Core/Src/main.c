@@ -74,6 +74,7 @@ FDCAN_HandleTypeDef hfdcan3;
 
 TIM_HandleTypeDef htim6;
 TIM_HandleTypeDef htim7;
+TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart2;
 
@@ -112,11 +113,14 @@ volatile float k_p = 7, k_i = 0.5, k_d = 0.0001;
 float x = 0, y = 0, theta = 0;
 float vx = 0, vy = 0, omega = 0;
 
-purpose mokuhyo[1] = {
+purpose mokuhyo[] = {
 		{0, 100, PI/2},
 		{0, 1000, 0},
 		{800, 1000,PI},
 };
+int16_t m_state = 0;
+
+int16_t flag_loc = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -127,6 +131,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_FDCAN3_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_TIM7_Init(void);
+static void MX_TIM17_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -298,7 +303,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		}
 	}
 	if(&htim7 == htim){
-		int16_t m_state = 0;
 		float k_p = 0.001, k_i = 0, k_d = 0;
 		float k_p_t = 1, k_i_t = 0, k_d_t = 0;
 		float hensax = mokuhyo[m_state].x - x;
@@ -325,6 +329,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		vx_tusin = (int16_t)(vx * 1000);
 		vy_tusin = (int16_t)(vy * 1000);
 		omega_tusin = (int16_t)(omega * 400);*/
+	}
+	if(&htim7 == htim){
+		if (fabsf(x - mokuhyo[m_state].x) < 10 && fabsf(y - mokuhyo[m_state].y) < 10 && fabsf(theta) - mokuhyo[m_state].theta) {
+			if (4 == m_state) {
+				m_state = 1;
+			}
+			else {
+				m_state++;
+			}
+		}
 	}
 }
 
@@ -369,6 +383,7 @@ int main(void)
   MX_FDCAN3_Init();
   MX_TIM6_Init();
   MX_TIM7_Init();
+  MX_TIM17_Init();
   /* USER CODE BEGIN 2 */
   printf("start\r\n");
   FDCAN_motor_RxTxSettings();
@@ -377,6 +392,7 @@ int main(void)
   printf("can start\r\n");
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_Base_Start_IT(&htim17);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -411,7 +427,8 @@ int main(void)
 		  printf("addmassage is error\r\n");
 		  Error_Handler();
 	  }
-	  printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
+	  //printf("%f, %f, %f, %f, %f, %f\r\n", x, y, theta, vx, vy, omega);
+	  printf("%f, %f, %f, %f, %f, %f\r\n", mokuhyo[m_state].x, mokuhyo[m_state].y, mokuhyo[m_state].theta, vx, vy, omega);
 	  HAL_Delay(10);
     /* USER CODE END WHILE */
 
@@ -625,6 +642,38 @@ static void MX_TIM7_Init(void)
   /* USER CODE BEGIN TIM7_Init 2 */
 
   /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
+  * @brief TIM17 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM17_Init(void)
+{
+
+  /* USER CODE BEGIN TIM17_Init 0 */
+
+  /* USER CODE END TIM17_Init 0 */
+
+  /* USER CODE BEGIN TIM17_Init 1 */
+
+  /* USER CODE END TIM17_Init 1 */
+  htim17.Instance = TIM17;
+  htim17.Init.Prescaler = 99;
+  htim17.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim17.Init.Period = 7999;
+  htim17.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim17.Init.RepetitionCounter = 0;
+  htim17.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim17) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM17_Init 2 */
+
+  /* USER CODE END TIM17_Init 2 */
 
 }
 
